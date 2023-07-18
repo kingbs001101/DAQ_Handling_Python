@@ -1,4 +1,4 @@
-# 하나의 채널에서 신호 받아오기 
+# 두 개의 채널에서 신호 받아오기 
 # 모듈 인용하기
 import nidaqmx
 import matplotlib.pyplot as plt

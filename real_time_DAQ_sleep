@@ -1,0 +1,75 @@
+# 두 개의 채널에서의 전압을 연산, 그래프화, 저장
+# 모듈 인용하기
+import nidaqmx
+import matplotlib.pyplot as plt
+import time
+import numpy as np
+import datetime
+
+
+
+# 반복 주기 (초)
+repeat_interval = 0.1
+# 신호를 받아서 저장할 데이터 리스트 생성
+Data_ai0 = []
+
+Data_ai1 = []
+
+fig, ax = plt.subplots(figsize=(5,5))
+
+# 제목 추가
+ax.set_xlabel('Voltage')
+ax.set_title('Voltages operation')
+
+    # NI DAQ mx 를 통해 작업을 하게 하는 구문
+with nidaqmx.Task() as task0, nidaqmx.Task() as task1:
+
+        # ai0 채널 접근 & 전압 읽기
+    task0.ai_channels.add_ai_voltage_chan("Dev2/ai0")
+
+        # ai1 채널 접근 & 전압 읽기
+    task1.ai_channels.add_ai_voltage_chan("Dev2/ai1")
+        
+      
+        
+        # 100개 데이터 단위로 오차 계산하기 위한 for 문
+       
+
+    start_time_2 = time.time()
+            # 데이터 수집 시작
+            # 반복문 선언
+    while time.time() - start_time_2 < 10 :
+                
+                # 남은 시간(대기시간) 초기화
+                elapsed_time = 0
+
+                start_time_3 = time.time()
+
+                # 데이터 리스트를 각 채널의 입력전압을 읽어와 채우기
+                # 둘 째 자리까지 받기
+                Data_ai0.append(round(task0.read(),2))
+                Data_ai1.append(round(task1.read(),2))
+                sum_0f_Data_ai0_ai1 = np.array(Data_ai0) + np.array(Data_ai1)
+
+                # 데이터 리스트들을 그래프화
+                ax.plot(Data_ai0,color = 'yellow')
+                ax.plot(Data_ai1,color = 'green')
+                ax.plot(sum_0f_Data_ai0_ai1, color = 'black')
+                
+                ax.set_xlim(len(Data_ai0) - 10, len(Data_ai0) + 10)
+                
+                plt.pause(0.0000001)
+
+                # 경과 시간 계산
+                elapsed_time = time.time() - start_time_3
+                
+                print("처리시간 : " , elapsed_time)
+
+                # 남은 시간 계산
+                remaining_time = repeat_interval - elapsed_time
+
+               
+                
+
+                # 남은 시간이 0보다 크면 대기
+                time.sleep(remaining_time)

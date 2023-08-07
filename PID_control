@@ -1,0 +1,81 @@
+# pid 연습
+import time
+import nidaqmx
+import matplotlib.pyplot as plt
+import pandas as pd
+import os
+import sys
+from multiprocessing import Process
+
+# PID Controller Parameters
+Kp = 0.7  # Proportional gain
+Ki = 0.05  # Integral gain
+Kd = 0.001  # Derivative gain
+
+def pid_control(setpoint, current_value, integral_sum, prev_error):
+    error = setpoint - current_value
+    integral_sum += error
+    derivative = error - prev_error
+
+    control_signal = Kp * error + Ki * integral_sum + Kd * derivative
+    prev_error = error
+
+    return control_signal, integral_sum, prev_error
+
+def output(control_signal):
+    with nidaqmx.Task() as task:
+        task.ao_channels.add_ao_voltage_chan("Dev1/ao0")
+        task.write([control_signal], auto_start=True)
+
+def graphing():
+    Data_ai0 = []
+    Data_ai1 = []
+    integral_sum = 0
+    prev_error = 0
+    
+    fig, ax = plt.subplots()
+    ax.set_ylabel('Voltage')
+    ax.set_title('AI0 and AI1 Voltages')
+
+    with nidaqmx.Task() as task_ai0, nidaqmx.Task() as task_ai1:
+        task_ai0.ai_channels.add_ai_voltage_chan("Dev1/ai0")
+        task_ai1.ai_channels.add_ai_voltage_chan("Dev1/ai1")
+
+        start_time = time.time()
+        while time.time() - start_time < 100:
+            voltage_ai0 = task_ai0.read()
+            voltage_ai1 = task_ai1.read()
+            Data_ai0.append(voltage_ai0)
+            Data_ai1.append(voltage_ai1)
+
+            control_signal, integral_sum, prev_error = pid_control(voltage_ai1, voltage_ai0, integral_sum, prev_error)
+            
+            output(control_signal)
+
+            ax.plot(Data_ai0, label='AI0 Voltage', color='blue')
+            ax.plot(Data_ai1, label='AI1 Voltage', color='red')
+            ax.set_xlim(len(Data_ai0) - 50, len(Data_ai0) + 50)
+            ax.legend()
+            plt.pause(0.01)
+
+            if not plt.fignum_exists(fig.number):
+               break
+
+if __name__ == '__main__':
+    process_1 = Process(target=output)
+    process_2 = Process(target=graphing)
+
+    process_2.start()
+    process_1.start()
+
+    process_2.join()
+
+    if process_2.is_alive():
+        pass
+
+    else:
+        # Terminate process_1
+        process_1.terminate()
+        process_2.join()  # Wait for process_1 to finish gracefully
+
+    print("All processes have finished.\n***************************")

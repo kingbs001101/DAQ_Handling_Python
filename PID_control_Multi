@@ -1,0 +1,162 @@
+# ai1, ao1 채널 시간에 따라 전압 출력
+# ai0, ao0 채널을 pid로 제어
+# 멀티프로세스로 전압 읽기, 제어 출력, 그래프 그리기 분담
+
+import time
+import nidaqmx
+import matplotlib.pyplot as plt
+from multiprocessing import Process, Queue, Lock
+import os
+import sys
+
+# PID Controller Parameters
+Kp = 0.01
+Ki = 0.1
+Kd = 0.000001
+
+def output_ai1():
+
+    with nidaqmx.Task() as task:
+        task.ao_channels.add_ao_voltage_chan("Dev1/ao1")
+
+        start_time_1 = time.time()
+        while time.time() - start_time_1 < 2.05:
+            task.write([0.0], auto_start=True)
+
+        while True:
+            task.write([1.0], auto_start=True)
+
+def pid_control(setpoint, current_value, integral_sum, prev_error):
+    error = setpoint - current_value
+    integral_sum += error
+    derivative = error - prev_error
+
+    control_signal = Kp * error + Ki * integral_sum + Kd * derivative
+
+    prev_error = error
+
+    return control_signal, integral_sum, prev_error
+
+def output_voltage(control_signal, lock):
+    with nidaqmx.Task() as task:
+        task.ao_channels.add_ao_voltage_chan("Dev1/ao0")
+
+        task.write([control_signal], auto_start=True)
+
+        # time.sleep(0.1)
+
+def read_and_control(queue, lock):
+    integral_sum = 0
+    prev_error = 0
+
+    with nidaqmx.Task() as task_ai0, nidaqmx.Task() as task_ai1:
+        task_ai0.ai_channels.add_ai_voltage_chan("Dev1/ai0")
+        task_ai1.ai_channels.add_ai_voltage_chan("Dev1/ai1")
+
+        start_time = time.time()
+        while True:
+            
+            elapsed_time = time.time() - start_time
+
+            voltage_ai0 = task_ai0.read()
+            voltage_ai1 = task_ai1.read()
+
+            control_signal, integral_sum, prev_error = pid_control(voltage_ai1, voltage_ai0, integral_sum, prev_error)
+
+            output_voltage(control_signal, lock)  # Output the control signal
+
+            queue.put((voltage_ai1, voltage_ai0, control_signal))
+
+
+def real_time_graph(queue):
+    fig, ax = plt.subplots(figsize=(5, 5))
+    ax.set_ylabel('Voltage')
+    ax.set_xlabel('Time')
+    ax.set_title('Real-time Voltages')
+
+    data_ai0 = []
+    data_ai1 = []
+    time_points = []
+
+    start_time = time.time()
+    while time.time()-start_time<5 : 
+        start_time_2 = time.time()
+        elapsed_time = time.time() - start_time
+        
+        while not queue.empty():
+            voltage_ai1, voltage_ai0, _ = queue.get()
+            data_ai0.append(voltage_ai0)
+            data_ai1.append(voltage_ai1)
+            time_points.append(elapsed_time)
+    
+        ax.plot(time_points, data_ai0,color='red')
+
+        ax.plot(time_points, data_ai1, color='black')
+
+        ax.axhline(y=1.04, color='blue', linestyle='--')
+        ax.axhline(y=0.96, color='blue', linestyle='--')
+
+        ax.set_xlim(0, 10)
+
+        ax.grid(True)
+
+        ax.xaxis.set_major_locator(plt.MaxNLocator(10))
+            # ax.yaxis.set_major_locator(plt.MaxNLocator(20))
+
+       # ax.xaxis.set_major_formatter(plt.FormatStrFormatter("%.2f"))  # 소수점 둘째 자리까지 표현
+        # ax.legend()
+
+        plt.pause(0.00001)
+
+        asdf = time.time()-start_time_2
+        print(asdf)
+
+        # time.sleep(0.5-asdf)
+
+    print(len(data_ai0))
+    
+
+        # if time.time()-start_time >5 : 
+        #     plt.pause(10)
+
+        
+        
+        # if not plt.fignum_exists(fig.number):
+
+        #     print(len(data_ai0))
+        #     sys.exit(0)    
+        #     break
+
+if __name__ == '__main__':
+    queue = Queue()
+    lock = Lock()
+    process_control = Process(target=read_and_control, args=(queue, lock))
+    process_graphing = Process(target=real_time_graph, args=(queue,))
+    process_output_ai1 = Process(target=output_ai1)
+
+    process_graphing.start()
+    process_output_ai1.start()  # Start output_ai1 after read_and_control
+    process_control.start()
+
+
+    process_graphing.join()
+
+    if process_graphing.is_alive():
+        pass
+    else:
+        process_control.terminate()
+        process_output_ai1.terminate()
+
+        with nidaqmx.Task() as task0, nidaqmx.Task() as task1:
+
+            task0.ao_channels.add_ao_voltage_chan("Dev1/ao0")
+            task1.ao_channels.add_ao_voltage_chan("Dev1/ao1")
+
+            task0.write([0.0], auto_start=True)
+            task1.write([0.0], auto_start=True)
+
+            print("hi")
+
+        process_control.join()
+        process_output_ai1.join()
+
